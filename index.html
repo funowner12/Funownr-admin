@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fun Admin Panel — Fixed</title>
+<style>
+  :root{
+    --bg:#0b1220; --card:#0f1724; --muted:#94a3b8; --accent:#3b82f6;
+  }
+  body{ margin:0; font-family:Inter,system-ui,Segoe UI,Roboto; background:var(--bg); color:#e6eef8;}
+  .nav{ background:#0f1724; padding:16px; text-align:center; font-weight:700; letter-spacing:0.6px; box-shadow:0 6px 20px #0008;}
+  .wrap{ max-width:1024px; margin:20px auto; padding:16px; }
+  .card{ background:var(--card); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 6px 18px #0006; }
+  h3{ margin:0 0 8px 0; }
+  label{display:block; margin-top:10px; color:var(--muted); font-size:13px;}
+  input, select, button{ width:100%; padding:10px 12px; margin-top:8px; border-radius:10px; border:none; font-size:14px; }
+  input, select{ background:#0b1228; color:#e6eef8; outline:none; }
+  button{ background:var(--accent); color:white; cursor:pointer; transition:all .18s; border:1px solid rgba(255,255,255,0.03); }
+  button:hover{ transform:translateY(-2px); box-shadow:0 8px 18px #0007; }
+  table{ width:100%; border-collapse:collapse; margin-top:12px; color:#e6eef8; }
+  th{ text-align:left; padding:10px; background:#0b1228; font-size:13px; color:var(--muted); }
+  td{ padding:10px; border-bottom:1px solid rgba(255,255,255,0.03); font-size:14px; }
+  .del{ background:#ef4444; padding:6px 10px; border-radius:8px; color:white; display:inline-block; cursor:pointer; }
+  .small{ font-size:12px; color:var(--muted); }
+  .flex{ display:flex; gap:10px; }
+  @media(max-width:680px){ .flex{ flex-direction:column } }
+</style>
+</head>
+<body>
+  <div class="nav">Fun Admin Panel — Fixed</div>
+  <div class="wrap">
+
+    <!-- SETTINGS -->
+    <div class="card">
+      <h3>App Settings (realtime)</h3>
+      <label>Deposit Amount</label>
+      <input id="depositamount" placeholder="e.g. 500" />
+
+      <label>Link</label>
+      <input id="link" placeholder="https://..." />
+
+      <!-- NEW: Title field for textview17 -->
+      <label>Name</label>
+      <input id="title" placeholder="Text that will appear in textview17 (realtime)" />
+
+      <div style="margin-top:12px" class="flex">
+        <button id="saveSettingsBtn">Save Settings</button>
+        <button id="resetSettingsBtn" style="background:#475569">Reset Fields</button>
+      </div>
+      <div class="small" style="margin-top:8px">Title is saved to <code>data/data/title</code> so your Android/web client can read and show it.</div>
+    </div>
+
+    <!-- ADD USER -->
+    <div class="card">
+      <h3>Add User</h3>
+
+      <label>Mobile</label>
+      <input id="mobile" placeholder="Mobile number (unique key)" />
+
+      <label>Brand (select)</label>
+      <select id="brand">
+        <option value="">-- Choose device brand --</option>
+        <option>Samsung</option>
+        <option>Xiaomi</option>
+        <option>Realme</option>
+        <option>OnePlus</option>
+        <option>Vivo</option>
+        <option>OPPO</option>
+        <option>iPhone</option>
+        <option>Other</option>
+      </select>
+
+      <label>Time (auto)</label>
+      <input id="time" readonly placeholder="Auto filled on Add" />
+
+      <div style="margin-top:12px" class="flex">
+        <button id="addUserBtn">Add User</button>
+        <button id="clearAddBtn" style="background:#475569">Clear</button>
+      </div>
+      <div class="small" style="margin-top:8px">Note: Mobile will be used as the user key (so it must be unique).</div>
+    </div>
+
+    <!-- USERS TABLE -->
+    <div class="card">
+      <h3>Users List</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Mobile</th><th>Brand</th><th>Time</th><th>Action</th></tr>
+        </thead>
+        <tbody id="usersTable">
+          <tr><td colspan="5" class="small">Loading users...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Firebase v8 (namespaced) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+  <script>
+    // ---------- CONFIG (updated to shadowking-404ba) ----------
+    const firebaseConfig = {
+      apiKey: "AIzaSyBPYx0iRFGt4Bx1bEIAzawFZBHQv_ZyROI",
+      authDomain: "shadowking-404ba.firebaseapp.com",
+      databaseURL: "https://shadowking-404ba-default-rtdb.firebaseio.com",
+      projectId: "shadowking-404ba",
+      storageBucket: "shadowking-404ba.firebasestorage.app",
+      messagingSenderId: "522547785542",
+      appId: "1:522547785542:android:ef83478bb1d90315cfbf47"
+    };
+
+    // init
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // element refs
+    const depositamountEl = document.getElementById('depositamount');
+    const linkEl = document.getElementById('link');
+    const titleEl = document.getElementById('title');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+
+    const mobileEl = document.getElementById('mobile');
+    const brandEl = document.getElementById('brand');
+    const timeEl = document.getElementById('time');
+    const addUserBtn = document.getElementById('addUserBtn');
+    const clearAddBtn = document.getElementById('clearAddBtn');
+
+    const usersTable = document.getElementById('usersTable');
+
+    // ---------- LOAD SETTINGS (realtime) ----------
+    db.ref('data/data').on('value', snapshot => {
+      const v = snapshot.val();
+      if (!v) {
+        depositamountEl.value = '';
+        linkEl.value = '';
+        titleEl.value = '';
+        return;
+      }
+      depositamountEl.value = v.depositamount || '';
+      linkEl.value = v.link || '';
+      titleEl.value = v.title || '';
+    }, err => {
+      console.error('settings read error', err);
+      depositamountEl.value = '';
+      linkEl.value = '';
+      titleEl.value = '';
+    });
+
+    saveSettingsBtn.addEventListener('click', () => {
+      const deposit = depositamountEl.value.trim();
+      const link = linkEl.value.trim();
+      const title = titleEl.value.trim();
+      db.ref('data/data').update({ depositamount: deposit, link: link, title: title })
+        .then(()=> alert('Settings saved'))
+        .catch(e=> alert('Save failed: ' + e.message));
+    });
+
+    resetSettingsBtn.addEventListener('click', ()=> {
+      depositamountEl.value = '';
+      linkEl.value = '';
+      titleEl.value = '';
+    });
+
+    // ---------- USERS LIST (realtime) ----------
+    function renderUsers(dataObj){
+      if (!dataObj){
+        usersTable.innerHTML = '<tr><td colspan="5" class="small">No users found</td></tr>';
+        return;
+      }
+      const keys = Object.keys(dataObj);
+      if (keys.length === 0){
+        usersTable.innerHTML = '<tr><td colspan="5" class="small">No users found</td></tr>';
+        return;
+      }
+
+      let i = 1;
+      let html = '';
+      keys.forEach(k=>{
+        const u = dataObj[k] || {};
+        const mobile = u.mobile || k;
+        const brand = u.brand || '';
+        const time = u.time || '';
+        html += `<tr>
+          <td>${i++}</td>
+          <td>${escapeHtml(mobile)}</td>
+          <td>${escapeHtml(brand)}</td>
+          <td>${escapeHtml(time)}</td>
+          <td><span class="del" onclick="deleteUser('${encodeURIComponent(mobile)}')">DELETE</span></td>
+        </tr>`;
+      });
+      usersTable.innerHTML = html;
+    }
+
+    db.ref('Users').on('value', snap => {
+      renderUsers(snap.val());
+    }, err=> {
+      console.error('users read error', err);
+      usersTable.innerHTML = '<tr><td colspan="5" class="small">Error loading users</td></tr>';
+    });
+
+    // ---------- ADD USER ----------
+    addUserBtn.addEventListener('click', () => {
+      const mobile = mobileEl.value.trim();
+      const brand = brandEl.value.trim();
+      // auto time now if empty
+      const time = new Date().toISOString().replace('T',' ').split('.')[0];
+
+      if (!mobile) { alert('Enter mobile'); return; }
+      if (!brand) { if(!confirm('Brand empty — continue?')) return; }
+
+      const obj = { mobile: mobile, brand: brand, time: time };
+
+      db.ref('Users/' + mobile).set(obj)
+        .then(()=>{
+          // set time field visible in UI
+          timeEl.value = time;
+          // clear inputs
+          mobileEl.value = '';
+          brandEl.value = '';
+          timeEl.value = '';
+          alert('User added');
+        })
+        .catch(e=> alert('Add failed: ' + e.message));
+    });
+
+    clearAddBtn.addEventListener('click', ()=> {
+      mobileEl.value = '';
+      brandEl.value = '';
+      timeEl.value = '';
+    });
+
+    // When user focuses brand or clicks it, optional: you can auto-open options (mobile browsers vary)
+    brandEl.addEventListener('focus', ()=> brandEl.size = Math.min(6, brandEl.options.length));
+    brandEl.addEventListener('blur', ()=> brandEl.size = 1);
+
+    // ---------- DELETE USER (global fn so inline onclick works) ----------
+    window.deleteUser = function(mobileEncoded){
+      const mobile = decodeURIComponent(mobileEncoded);
+      if (!confirm('Delete user ' + mobile + ' ?')) return;
+      db.ref('Users/' + mobile).remove()
+        .then(()=> alert('Deleted'))
+        .catch(e=> alert('Delete failed: ' + e.message));
+    };
+
+    // ---------- UTIL ----------
+    function escapeHtml(str){
+      if (!str) return '';
+      return String(str).replace(/[&<>"'`=\/]/g, function(s) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'})[s];
+      });
+    }
+  </script>
+</body>
+</html>
